@@ -1,45 +1,40 @@
+import 'dart:io';
+
 import 'package:graphql/client.dart';
 import 'dart:convert';
+import 'data.dart';
 import 'key.dart';
 
-const String prFilesQuery = '''
-query {
+const String prFilesQuery = r'''
+query TestedPrs($pageCursor: String) {
   repository(name: "engine", owner: "flutter") {
-    pullRequests(last: 100, states: MERGED) {
+    pullRequests(last: 10, states: MERGED, before: $pageCursor) {
       nodes {
+        url
+        mergedAt
         files(last: 100) {
           totalCount
           nodes {
             path
           }
         }
-        mergedAt
-        url
+      }
+      pageInfo {
+        hasPreviousPage
+        startCursor
       }
     }
   }
 }
+
 ''';
 
 var fileIsTest = RegExp(r'_test\.');
 var fileIsIos = RegExp(r'shell\/platform\/darwin\/ios.*\.mm');
 var fileIsAndroid = RegExp(r'shell\/platform\/android.*\.java');
 
-class PrsThatDay {
-  int totalPrs = 0;
-  int iosPrs = 0;
-  int androidPrs = 0;
-  int totalPrsWithTest = 0;
-  int iosPrsWithTest = 0;
-  int androidPrsWithTest = 0;
 
-  @override
-  String toString() {
-    return '$totalPrsWithTest/$totalPrs tested. $androidPrsWithTest/$androidPrs android. $iosPrsWithTest/$iosPrs ios.';
-  }
-}
-
-void main() {
+void main() async {
   var httpLink = HttpLink(
     uri: 'https://api.github.com/graphql'
   );
@@ -53,34 +48,40 @@ void main() {
     link: authLink.concat(httpLink),
   );
 
-  gitHubGraphQlClient.query(QueryOptions(
+  var result = await gitHubGraphQlClient.query(QueryOptions(
     documentNode: gql(prFilesQuery),
-  )).then(
-    (value) {
-      print('github value: ${value.data}');
-      print('github error: ${value.exception}');
-
-      analyzePrs(value.data);
+    variables: <String, dynamic> {
+      'pageCursor': null,
     }
-  );
+  ));
+
+  print('github value: ${result.data}');
+  print('github error: ${result.exception}');
+
+  var output = Histogram();
+  analyzePrs(githubData: result.data, histogram: output);
+
+  File('data/pr_data.json').writeAsStringSync(JsonEncoder().convert(output.toJson()));
 }
 
-void analyzePrs(dynamic data) {
-  List<dynamic> prs = data['repository']['pullRequests']['nodes'];
-  var output = <DateTime, PrsThatDay>{};
+void analyzePrs({
+  dynamic githubData,
+  Histogram histogram,
+}) {
+  List<dynamic> prs = githubData['repository']['pullRequests']['nodes'];
+
   print(JsonEncoder.withIndent('  ').convert(prs));
 
   for (Map<String, dynamic> pr in prs) {
     var mergeDateTime = DateTime.parse(pr['mergedAt']);
     // Trim off the time. Get date only.
     var mergeDate = DateTime(mergeDateTime.year, mergeDateTime.month, mergeDateTime.day);
-    output.putIfAbsent(mergeDate, () => PrsThatDay());
-    var daysPrs = output[mergeDate];
-    daysPrs.totalPrs += 1;
+    var daysPrs = histogram[mergeDate];
 
     var isAndroid = false;
     var isIos = false;
     var isTested = false;
+    var hasRealCode = false;
 
     for (String file in pr['files']['nodes'].map((node) => node['path'])) {
       if (fileIsAndroid.hasMatch(file)) {
@@ -92,8 +93,13 @@ void analyzePrs(dynamic data) {
       if (fileIsTest.hasMatch(file)) {
         isTested = true;
       }
+      if (file != 'DEPS' && !file.contains('licenses_golden')) {
+        hasRealCode = true;
+      }
     }
 
+    daysPrs.totalPrs += 1;
+    daysPrs.enginePrs += hasRealCode ? 1 : 0;
     daysPrs.totalPrsWithTest += isTested ? 1 : 0;
     daysPrs.androidPrs += isAndroid ? 1 : 0;
     daysPrs.androidPrsWithTest += isAndroid && isTested ? 1 : 0;
@@ -101,5 +107,6 @@ void analyzePrs(dynamic data) {
     daysPrs.iosPrsWithTest += isIos && isTested ? 1 : 0;
   }
 
-  print(output);
+  print(histogram);
 }
+
