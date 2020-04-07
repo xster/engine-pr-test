@@ -86,7 +86,7 @@ String createCvs(Histogram histogram) {
     output.writeln(
       '${date.year}-${date.month}-${date.day},${prs.totalPrs},${prs.enginePrs},'
       '${prs.androidPrs},${prs.iosPrs},${prs.totalPrsWithTest},'
-      '${prs.androidPrsWithTest},${prs.iosPrsWithTest},${prs.untestedPrs.join("/")}'
+      '${prs.androidPrsWithTest},${prs.iosPrsWithTest},${prs.untestedPrs.join(" ")}'
     );
   });
   return output.toString();
