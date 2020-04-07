@@ -8,7 +8,7 @@ import 'key.dart';
 const String prFilesQuery = r'''
 query TestedPrs($pageCursor: String) {
   repository(name: "engine", owner: "flutter") {
-    pullRequests(last: 10, states: MERGED, before: $pageCursor) {
+    pullRequests(last: 100, states: MERGED, before: $pageCursor) {
       nodes {
         url
         mergedAt
@@ -29,7 +29,7 @@ query TestedPrs($pageCursor: String) {
 
 ''';
 
-var fileIsTest = RegExp(r'_test\.');
+var fileIsTest = RegExp(r'(_test\.\w+|Test\.java|unittests\.\w+)');
 var fileIsIos = RegExp(r'shell\/platform\/darwin\/ios.*\.mm');
 var fileIsAndroid = RegExp(r'shell\/platform\/android.*\.java');
 
@@ -48,20 +48,48 @@ void main() async {
     link: authLink.concat(httpLink),
   );
 
-  var result = await gitHubGraphQlClient.query(QueryOptions(
-    documentNode: gql(prFilesQuery),
-    variables: <String, dynamic> {
-      'pageCursor': null,
-    }
-  ));
-
-  print('github value: ${result.data}');
-  print('github error: ${result.exception}');
-
+  String currentCursor;
   var output = Histogram();
-  analyzePrs(githubData: result.data, histogram: output);
 
-  File('data/pr_data.json').writeAsStringSync(JsonEncoder().convert(output.toJson()));
+  while (true) {
+    var result = await gitHubGraphQlClient.query(QueryOptions(
+      documentNode: gql(prFilesQuery),
+      variables: <String, dynamic> {
+        'pageCursor': currentCursor,
+      }
+    ));
+
+    // print('github value: ${result.data}');
+    print('github error: ${result.exception}');
+
+    analyzePrs(githubData: result.data, histogram: output);
+
+    File('data/pr_data.json').writeAsStringSync(JsonEncoder().convert(output.toJson()));
+    File('data/pr_data.csv').writeAsStringSync(createCvs(output));
+
+    var pageInfo = result.data['repository']['pullRequests']['pageInfo'];
+    if (!pageInfo['hasPreviousPage']) {
+      break;
+    } else {
+      currentCursor = pageInfo['startCursor'];
+    }
+  }
+}
+
+String createCvs(Histogram histogram) {
+  var output = StringBuffer();
+  output.writeln(
+    'date,totalPrs,codePrs,androidPrs,iosPrs,testedPrs,androidTestedPrs,'
+    'iosTestedPrs,untestedPrs'
+  );
+  histogram.dates.forEach((date, prs) {
+    output.writeln(
+      '${date.year}-${date.month}-${date.day},${prs.totalPrs},${prs.enginePrs},'
+      '${prs.androidPrs},${prs.iosPrs},${prs.totalPrsWithTest},'
+      '${prs.androidPrsWithTest},${prs.iosPrsWithTest},${prs.untestedPrs.join("/")}'
+    );
+  });
+  return output.toString();
 }
 
 void analyzePrs({
@@ -70,7 +98,7 @@ void analyzePrs({
 }) {
   List<dynamic> prs = githubData['repository']['pullRequests']['nodes'];
 
-  print(JsonEncoder.withIndent('  ').convert(prs));
+  // print(JsonEncoder.withIndent('  ').convert(prs));
 
   for (Map<String, dynamic> pr in prs) {
     var mergeDateTime = DateTime.parse(pr['mergedAt']);
@@ -105,8 +133,13 @@ void analyzePrs({
     daysPrs.androidPrsWithTest += isAndroid && isTested ? 1 : 0;
     daysPrs.iosPrs += isIos ? 1 : 0;
     daysPrs.iosPrsWithTest += isIos && isTested ? 1 : 0;
+
+    if (hasRealCode && !isTested) {
+      daysPrs.untestedPrs.add(pr['url']);
+    }
   }
 
   print(histogram);
+  print('===========================');
 }
 

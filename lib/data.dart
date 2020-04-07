@@ -13,6 +13,7 @@ class PrsThatDay {
   int totalPrsWithTest = 0;
   int iosPrsWithTest = 0;
   int androidPrsWithTest = 0;
+  List<String> untestedPrs = <String>[];
 
   factory PrsThatDay.fromJson(Map<String, dynamic> json) => _$PrsThatDayFromJson(json);
 
