@@ -1,16 +1,6 @@
 # engine_pr_test
 
-A new Flutter project.
+Queries the flutter/engine GitHub repo via v4 GraphQL APIs to check how many
+PRs have tests (by rudimentary regex).
 
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://flutter.dev/docs/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://flutter.dev/docs/cookbook)
-
-For help getting started with Flutter, view our
-[online documentation](https://flutter.dev/docs), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Run via `dart lib/query.dart` which will update the result files in `data`.
